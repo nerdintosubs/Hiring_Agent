@@ -96,3 +96,13 @@ curl.exe -sS -X POST -H "Authorization: Bearer $env:RECRUITER_JWT" "$env:API_URL
 - `401 Unauthorized`: regenerate JWT from latest `hiring-agent-jwt-secret`.
 - `500` on startup: confirm Cloud Run has Cloud SQL attachment and latest `hiring-agent-database-url`.
 - No new leads: verify recruiter used valid `source_channel` and unique phone.
+
+## 9) Instagram daily automation
+```powershell
+# Create daily capture sheet from seed accounts (manual collection step follows)
+python scripts/instagram_outreach_automation.py --mode plan --seeds refreshdspa,tiaradoorstep --per-seed 50
+
+# Ingest completed capture sheet to manual leads and generate outreach queue
+$env:RECRUITER_JWT=$env:RECRUITER_JWT
+python scripts/instagram_outreach_automation.py --mode ingest --input-csv data/instagram_capture_sheet.csv --api-base $env:API_URL --campaign-id <campaign_id>
+```

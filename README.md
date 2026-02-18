@@ -61,6 +61,15 @@ python scripts/mock_webhooks.py --channel telephony --count 5 --event-type call_
 python scripts/generate_jwt.py --secret dev-secret --subject recruiter-1 --roles recruiter
 ```
 
+## Instagram outreach ops automation (compliant workflow)
+```bash
+# 1) Generate daily capture sheet from seed accounts
+python scripts/instagram_outreach_automation.py --mode plan --seeds refreshdspa,tiaradoorstep --per-seed 50
+
+# 2) After filling captured handles manually, ingest into lead inbox + create outreach queue
+RECRUITER_JWT=<token> python scripts/instagram_outreach_automation.py --mode ingest --input-csv data/instagram_capture_sheet.csv --api-base <api-url> --campaign-id <cmp_id>
+```
+
 ## Persistence
 - SQLite persistence is enabled by default via `PERSISTENCE_ENABLED=true`.
 - Path is configurable with `PERSISTENCE_DB_PATH` (default `data/hiring_agent.sqlite3`).

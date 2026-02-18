@@ -28,4 +28,5 @@ jobs:
       - name: Test
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTEST_ADDOPTS: ""
         run: python -m pytest -q tests/backend

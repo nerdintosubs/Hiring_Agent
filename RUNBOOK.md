@@ -103,6 +103,6 @@ curl.exe -sS -X POST -H "Authorization: Bearer $env:RECRUITER_JWT" "$env:API_URL
 python scripts/instagram_outreach_automation.py --mode plan --seeds refreshdspa,tiaradoorstep --per-seed 50
 
 # Ingest completed capture sheet to manual leads and generate outreach queue
-$env:RECRUITER_JWT=$env:RECRUITER_JWT
-python scripts/instagram_outreach_automation.py --mode ingest --input-csv data/instagram_capture_sheet.csv --api-base $env:API_URL --campaign-id <campaign_id>
+$env:JWT_SECRET=((gcloud secrets versions access latest --secret=hiring-agent-jwt-secret --project=$env:PROJECT_ID) -join '').Trim()
+python scripts/instagram_outreach_automation.py --mode ingest --input-csv data/instagram_capture_sheet.csv --api-base $env:API_URL --campaign-id <campaign_id> --state-csv data/instagram_processed_handles.csv
 ```

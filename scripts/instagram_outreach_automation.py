@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 from urllib import error, request
 
+import jwt
+
 AREAS = [
     "hsr",
     "btm",
@@ -187,15 +189,27 @@ def ingest_capture_sheet(
     wa_number: str,
     dry_run: bool,
     max_rows: int,
+    state_csv: Path,
 ) -> dict[str, int]:
     ensure_parent(output_csv)
+    ensure_parent(state_csv)
     rows: list[dict[str, str]] = []
+    processed_handles: set[str] = set()
+    if state_csv.exists():
+        with state_csv.open("r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                handle = row.get("target_handle", "").strip().lower().lstrip("@")
+                if handle:
+                    processed_handles.add(handle)
+
     stats = {
         "processed": 0,
         "lead_created": 0,
         "needs_phone": 0,
         "errors": 0,
         "deduplicated": 0,
+        "skipped_already_processed": 0,
     }
     with input_csv.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -204,6 +218,9 @@ def ingest_capture_sheet(
                 break
             handle = row.get("target_handle", "").strip().lstrip("@")
             if not handle:
+                continue
+            if handle.lower() in processed_handles:
+                stats["skipped_already_processed"] += 1
                 continue
 
             stats["processed"] += 1
@@ -254,6 +271,7 @@ def ingest_capture_sheet(
                         stats["lead_created"] += 1
                         if ingest_result.deduplicated:
                             stats["deduplicated"] += 1
+                        processed_handles.add(handle.lower())
                     else:
                         ingest_result.status = "error"
                         ingest_result.error_detail = str(response.get("detail", "unknown"))
@@ -261,6 +279,7 @@ def ingest_capture_sheet(
                 else:
                     ingest_result.status = "lead_created_dry_run"
                     stats["lead_created"] += 1
+                    processed_handles.add(handle.lower())
             else:
                 stats["needs_phone"] += 1
 
@@ -312,7 +331,30 @@ def ingest_capture_sheet(
         )
         writer.writeheader()
         writer.writerows(rows)
+
+    with state_csv.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["target_handle", "processed_at_utc"])
+        writer.writeheader()
+        now = utc_now().isoformat()
+        for handle in sorted(processed_handles):
+            writer.writerow({"target_handle": handle, "processed_at_utc": now})
     return stats
+
+
+def recruiter_token_from_jwt_secret(
+    *,
+    jwt_secret: str,
+    subject: str,
+    roles: list[str],
+    hours: int = 24,
+) -> str:
+    payload = {
+        "sub": subject,
+        "roles": roles,
+        "exp": datetime.utcnow() + timedelta(hours=hours),
+    }
+    token = jwt.encode(payload, jwt_secret, algorithm="HS256")
+    return str(token)
 
 
 def main() -> int:
@@ -329,11 +371,15 @@ def main() -> int:
     parser.add_argument("--output-csv", default="")
     parser.add_argument("--api-base", default="http://127.0.0.1:8000")
     parser.add_argument("--recruiter-jwt", default=os.getenv("RECRUITER_JWT", ""))
+    parser.add_argument("--jwt-secret", default=os.getenv("JWT_SECRET", ""))
+    parser.add_argument("--jwt-subject", default=os.getenv("JWT_SUBJECT", "recruiter-automation"))
+    parser.add_argument("--jwt-hours", type=int, default=24)
     parser.add_argument("--created-by", default="instagram-ops")
     parser.add_argument("--campaign-id", default="")
     parser.add_argument("--wa-number", default="+919187351205")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--max-rows", type=int, default=500)
+    parser.add_argument("--state-csv", default="data/instagram_processed_handles.csv")
     args = parser.parse_args()
 
     today = utc_now().strftime("%Y%m%d")
@@ -356,19 +402,32 @@ def main() -> int:
     input_csv = Path(args.input_csv)
     if not input_csv.exists():
         raise SystemExit(f"Input CSV not found: {input_csv}")
-    if not args.recruiter_jwt and not args.dry_run:
-        raise SystemExit("Missing recruiter JWT. Set --recruiter-jwt or RECRUITER_JWT env var.")
+
+    recruiter_jwt = args.recruiter_jwt
+    if not recruiter_jwt and args.jwt_secret:
+        recruiter_jwt = recruiter_token_from_jwt_secret(
+            jwt_secret=args.jwt_secret,
+            subject=args.jwt_subject,
+            roles=["recruiter"],
+            hours=max(1, args.jwt_hours),
+        )
+    if not recruiter_jwt and not args.dry_run:
+        raise SystemExit(
+            "Missing recruiter JWT. Set --recruiter-jwt, RECRUITER_JWT, "
+            "or provide --jwt-secret/JWT_SECRET."
+        )
 
     stats = ingest_capture_sheet(
         input_csv=input_csv,
         output_csv=output_csv,
         api_base=args.api_base,
-        recruiter_jwt=args.recruiter_jwt,
+        recruiter_jwt=recruiter_jwt,
         created_by=args.created_by,
         campaign_id=args.campaign_id or None,
         wa_number=args.wa_number,
         dry_run=args.dry_run,
         max_rows=max(1, args.max_rows),
+        state_csv=Path(args.state_csv),
     )
     print(f"Created outreach queue: {output_csv}")
     print(
@@ -377,6 +436,7 @@ def main() -> int:
         f"lead_created={stats['lead_created']} "
         f"needs_phone={stats['needs_phone']} "
         f"deduplicated={stats['deduplicated']} "
+        f"skipped_already_processed={stats['skipped_already_processed']} "
         f"errors={stats['errors']}"
     )
     return 0

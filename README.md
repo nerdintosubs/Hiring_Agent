@@ -67,7 +67,7 @@ python scripts/generate_jwt.py --secret dev-secret --subject recruiter-1 --roles
 python scripts/instagram_outreach_automation.py --mode plan --seeds refreshdspa,tiaradoorstep --per-seed 50
 
 # 2) After filling captured handles manually, ingest into lead inbox + create outreach queue
-RECRUITER_JWT=<token> python scripts/instagram_outreach_automation.py --mode ingest --input-csv data/instagram_capture_sheet.csv --api-base <api-url> --campaign-id <cmp_id>
+JWT_SECRET=<jwt-secret> python scripts/instagram_outreach_automation.py --mode ingest --input-csv data/instagram_capture_sheet.csv --api-base <api-url> --campaign-id <cmp_id>
 ```
 
 ## Persistence

@@ -45,6 +45,13 @@ def _text_to_dt(value: Optional[str]) -> Optional[datetime]:
 
 def _normalize_database_url(database_url: str) -> str:
     value = database_url.strip()
+    if value.startswith("sqlite:///"):
+        sqlite_path = value[len("sqlite:///") :].split("?", 1)[0]
+        if sqlite_path and sqlite_path != ":memory:":
+            path = Path(sqlite_path)
+            if path.parent:
+                path.parent.mkdir(parents=True, exist_ok=True)
+        return value
     if "://" in value:
         return value
     path = Path(value)

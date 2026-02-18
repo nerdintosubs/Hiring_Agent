@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
+from backend.app.persistence import SqlitePersistence
 
 
 def _new_client(monkeypatch, db_path: Path) -> TestClient:
@@ -59,3 +60,10 @@ def test_manual_leads_persist_across_restart(monkeypatch, tmp_path) -> None:
     assert listed.status_code == 200
     ids = [item["lead_id"] for item in listed.json()]
     assert lead_id in ids
+
+
+def test_sqlite_url_creates_missing_parent_directories(tmp_path) -> None:
+    db_path = tmp_path / "nested" / "hiring_agent.sqlite3"
+    persistence = SqlitePersistence(f"sqlite:///{db_path.as_posix()}")
+    assert db_path.parent.exists()
+    assert persistence.ping()

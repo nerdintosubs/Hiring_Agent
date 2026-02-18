@@ -49,7 +49,20 @@ curl.exe -sS -X POST "$env:API_URL/campaigns/first-10/bootstrap" -H "Authorizati
 curl.exe -sS -H "Authorization: Bearer $env:RECRUITER_JWT" "$env:API_URL/leads/manual?limit=20"
 ```
 
-## 6) Common failures
+## 6) Daily shift check-in (repeatable)
+```powershell
+# Bootstrap a new first-10 campaign
+.\scripts\pilot_shift_checkin.ps1 -Mode bootstrap
+
+# Log shift metrics
+.\scripts\pilot_shift_checkin.ps1 -Mode checkin -CampaignId <campaign_id> -ShiftLabel "Shift-1" -Leads 15 -Screened 7
+.\scripts\pilot_shift_checkin.ps1 -Mode checkin -CampaignId <campaign_id> -ShiftLabel "Shift-2" -Trials 3 -Offers 2 -Joined 1
+
+# Read latest campaign status
+.\scripts\pilot_shift_checkin.ps1 -Mode status -CampaignId <campaign_id>
+```
+
+## 7) Common failures
 - `401 Unauthorized`: regenerate JWT from latest `hiring-agent-jwt-secret`.
 - `500` on startup: confirm Cloud Run has Cloud SQL attachment and latest `hiring-agent-database-url`.
 - No new leads: verify recruiter used valid `source_channel` and unique phone.

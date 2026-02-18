@@ -1,0 +1,47 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: hiring-agent-api
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/cpu-throttling: "false"
+        autoscaling.knative.dev/minScale: "1"
+    spec:
+      containerConcurrency: 40
+      timeoutSeconds: 300
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/hiring-agent/hiring-agent-api:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: APP_ENV
+              value: production
+            - name: PERSISTENCE_ENABLED
+              value: "true"
+            - name: AUTH_ENABLED
+              value: "true"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: hiring-agent-database-url
+                  key: latest
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hiring-agent-jwt-secret
+                  key: latest
+            - name: JWT_ALGORITHM
+              value: HS256
+            - name: WHATSAPP_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hiring-agent-whatsapp-secret
+                  key: latest
+            - name: TELEPHONY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hiring-agent-telephony-secret
+                  key: latest
+

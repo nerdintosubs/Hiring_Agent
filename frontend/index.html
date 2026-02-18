@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bangalore Hiring Agent</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Bangalore Hiring Agent</h1>
+      <p class="lead">
+        Recruiter dashboard bootstrap for intake, screening, and offer pipeline visibility.
+      </p>
+
+      <section class="panel">
+        <h2>API Health</h2>
+        <button id="health-check">Check Backend</button>
+        <p id="health-result">Idle</p>
+      </section>
+
+      <section class="panel">
+        <h2>Pipeline Lookup</h2>
+        <label for="job-id">Job ID</label>
+        <input id="job-id" type="text" placeholder="job_xxxxx" />
+        <button id="fetch-pipeline">Fetch Pipeline</button>
+        <pre id="pipeline-output"></pre>
+      </section>
+
+      <section class="panel">
+        <h2>First 10 Campaign</h2>
+        <p class="subtle">
+          Bootstrap a female fresher therapist onboarding sprint and track funnel progress.
+        </p>
+
+        <div class="form-grid">
+          <label for="employer-name">Employer Name</label>
+          <input id="employer-name" type="text" placeholder="Koramangala Wellness Spa" />
+
+          <label for="neighborhood-focus">Neighborhood Focus</label>
+          <input id="neighborhood-focus" type="text" placeholder="Koramangala, HSR Layout, BTM" />
+
+          <label for="whatsapp-number">WhatsApp Business Number</label>
+          <input id="whatsapp-number" type="text" value="+919187351205" />
+
+          <label for="target-joiners">Target Joiners</label>
+          <input id="target-joiners" type="number" min="1" max="200" value="10" />
+        </div>
+        <button id="bootstrap-campaign">Bootstrap Campaign</button>
+        <p id="campaign-bootstrap-result">Idle</p>
+
+        <div class="form-grid">
+          <label for="campaign-id">Campaign ID</label>
+          <input id="campaign-id" type="text" placeholder="cmp_xxxxx" />
+
+          <label for="event-type">Event Type</label>
+          <select id="event-type">
+            <option value="leads">leads</option>
+            <option value="screened">screened</option>
+            <option value="trials">trials</option>
+            <option value="offers">offers</option>
+            <option value="joined">joined</option>
+          </select>
+
+          <label for="event-count">Count</label>
+          <input id="event-count" type="number" min="1" max="200" value="1" />
+        </div>
+        <button id="log-event">Log Event</button>
+        <button id="fetch-campaign-progress">Fetch Progress</button>
+        <div id="campaign-kpis" class="kpi-grid"></div>
+        <div class="panel-inline">
+          <h3>Recommended Actions</h3>
+          <ul id="campaign-actions"></ul>
+        </div>
+        <pre id="campaign-output"></pre>
+      </section>
+
+      <section class="panel">
+        <h2>Manual Lead Inbox</h2>
+        <p class="subtle">
+          Capture walk-in, phone, and referral leads without external providers.
+        </p>
+        <div class="form-grid">
+          <label for="lead-name">Name</label>
+          <input id="lead-name" type="text" placeholder="Ananya" />
+
+          <label for="lead-phone">Phone</label>
+          <input id="lead-phone" type="text" placeholder="9000012345" />
+
+          <label for="lead-source">Source</label>
+          <select id="lead-source">
+            <option value="walk_in">walk_in</option>
+            <option value="call">call</option>
+            <option value="referral">referral</option>
+            <option value="whatsapp">whatsapp</option>
+            <option value="agent">agent</option>
+            <option value="web">web</option>
+          </select>
+
+          <label for="lead-languages">Languages</label>
+          <input id="lead-languages" type="text" placeholder="kn,en" />
+
+          <label for="lead-job-id">Job ID (Optional)</label>
+          <input id="lead-job-id" type="text" placeholder="job_xxxxx" />
+
+          <label for="lead-neighborhood">Neighborhood</label>
+          <input id="lead-neighborhood" type="text" placeholder="HSR Layout" />
+
+          <label for="lead-created-by">Created By</label>
+          <input id="lead-created-by" type="text" placeholder="recruiter_1" />
+
+          <label for="lead-notes">Notes</label>
+          <input id="lead-notes" type="text" placeholder="walk-in from institute referral" />
+        </div>
+        <button id="create-manual-lead">Create Lead</button>
+        <button id="refresh-manual-leads">Refresh Inbox</button>
+        <div class="form-grid compact">
+          <label for="lead-filter-source">Filter Source</label>
+          <select id="lead-filter-source">
+            <option value="">all</option>
+            <option value="walk_in">walk_in</option>
+            <option value="call">call</option>
+            <option value="referral">referral</option>
+            <option value="whatsapp">whatsapp</option>
+            <option value="agent">agent</option>
+            <option value="web">web</option>
+          </select>
+
+          <label for="lead-filter-neighborhood">Filter Neighborhood</label>
+          <input id="lead-filter-neighborhood" type="text" placeholder="HSR" />
+
+          <label for="lead-filter-created-by">Filter Recruiter</label>
+          <input id="lead-filter-created-by" type="text" placeholder="recruiter_1" />
+
+          <label for="lead-filter-date-from">From Date</label>
+          <input id="lead-filter-date-from" type="date" />
+
+          <label for="lead-filter-date-to">To Date</label>
+          <input id="lead-filter-date-to" type="date" />
+
+          <label for="lead-filter-search">Search</label>
+          <input id="lead-filter-search" type="text" placeholder="name, phone, notes, id..." />
+        </div>
+        <button id="apply-manual-lead-filters">Apply Filters</button>
+        <p id="manual-lead-status">Idle</p>
+        <div class="table-wrap">
+          <table id="manual-leads-table">
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Source</th>
+                <th>Lead ID</th>
+                <th>Candidate ID</th>
+                <th>Job ID</th>
+              </tr>
+            </thead>
+            <tbody id="manual-leads-body"></tbody>
+          </table>
+        </div>
+        <pre id="manual-lead-output"></pre>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      PERSISTENCE_ENABLED: "true"
+      DATABASE_URL: postgresql+psycopg://hiring_agent:hiring_agent@db:5432/hiring_agent
+      AUTH_ENABLED: "false"
+      JWT_SECRET: dev-secret
+      JWT_ALGORITHM: HS256
+      WHATSAPP_WEBHOOK_SECRET: ""
+      TELEPHONY_WEBHOOK_SECRET: ""
+      WEBHOOK_MAX_RETRIES: "3"
+      WEBHOOK_RETRY_BACKOFF_SECONDS: "60"
+    depends_on:
+      - db
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hiring_agent
+      POSTGRES_PASSWORD: hiring_agent
+      POSTGRES_DB: hiring_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+

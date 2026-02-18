@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from fastapi.testclient import TestClient
+
+from backend.app.main import create_app
 from backend.app.models import utc_now
+from backend.app.services.recaptcha import (
+    RecaptchaVerificationError,
+    RecaptchaVerificationResult,
+)
 
 
 def test_create_website_lead_uses_default_sla_and_wa_link(client) -> None:
@@ -146,3 +153,69 @@ def test_overdue_queue_and_contact_update_marks_sla_breach(client) -> None:
 def test_website_summary_rejects_invalid_date_range(client) -> None:
     response = client.get("/funnel/website/summary?date_from=2026-03-01&date_to=2026-02-01")
     assert response.status_code == 400
+
+
+def test_recap_enabled_requires_token(monkeypatch) -> None:
+    monkeypatch.setenv("PERSISTENCE_ENABLED", "false")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setenv("RECAPTCHA_ENABLED", "true")
+    monkeypatch.setenv("RECAPTCHA_SECRET", "test-secret")
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/leads/website",
+        json={"name": "Recaptcha Candidate", "phone": "9000050000"},
+    )
+    assert response.status_code == 400
+    assert "missing recaptcha token" in response.text
+
+
+def test_recap_enabled_rejects_invalid_token(monkeypatch) -> None:
+    monkeypatch.setenv("PERSISTENCE_ENABLED", "false")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setenv("RECAPTCHA_ENABLED", "true")
+    monkeypatch.setenv("RECAPTCHA_SECRET", "test-secret")
+
+    def fake_verify(**_kwargs):
+        raise RecaptchaVerificationError("recaptcha token rejected")
+
+    monkeypatch.setattr("backend.app.main.verify_recaptcha_token", fake_verify)
+    client = TestClient(create_app())
+    response = client.post(
+        "/leads/website",
+        json={
+            "name": "Recaptcha Candidate",
+            "phone": "9000050001",
+            "recaptcha_token": "bad-token",
+        },
+    )
+    assert response.status_code == 403
+    assert "recaptcha token rejected" in response.text
+
+
+def test_recap_enabled_accepts_valid_token(monkeypatch) -> None:
+    monkeypatch.setenv("PERSISTENCE_ENABLED", "false")
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setenv("RECAPTCHA_ENABLED", "true")
+    monkeypatch.setenv("RECAPTCHA_SECRET", "test-secret")
+
+    def fake_verify(**_kwargs):
+        return RecaptchaVerificationResult(
+            success=True,
+            score=0.9,
+            action="therapist_apply",
+            hostname="bangaloredoorstepmassage.online",
+        )
+
+    monkeypatch.setattr("backend.app.main.verify_recaptcha_token", fake_verify)
+    client = TestClient(create_app())
+    response = client.post(
+        "/leads/website",
+        json={
+            "name": "Recaptcha Candidate",
+            "phone": "9000050002",
+            "recaptcha_token": "ok-token",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["lead_id"].startswith("wlead_")

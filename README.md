@@ -47,6 +47,7 @@ make smoke-local
 - `POST /leads/website/{lead_id}/contact` mark first recruiter contact and compute SLA breach.
 - `POST /events/website` capture website funnel events (`view`, `cta_click`, `form_start`, `form_submit`, `wa_click`).
 - `GET /funnel/website/summary` recruiter analytics for leads, SLA, source, and neighborhood mix.
+- Optional anti-bot: include `recaptcha_token` in `POST /leads/website` and enable server verification via env vars below.
 
 ## Dashboard
 - `frontend/index.html` now includes:
@@ -70,6 +71,11 @@ python scripts/generate_jwt.py --secret dev-secret --subject recruiter-1 --roles
 ## SLA configuration
 - Global default first-contact SLA for website leads: `DEFAULT_FIRST_CONTACT_SLA_MINUTES` (default `30`, allowed `5..240`).
 - Per-campaign override via `POST /campaigns/first-10/bootstrap` field: `first_contact_sla_minutes`.
+
+## reCAPTCHA configuration
+- `RECAPTCHA_ENABLED=true` enables server-side verification on `POST /leads/website`.
+- `RECAPTCHA_SECRET=<google-secret>` must be set when enabled.
+- `RECAPTCHA_MIN_SCORE` controls acceptance threshold (default `0.5`).
 
 ## Auth and Roles
 - Set `AUTH_ENABLED=true` to enforce JWT auth.

@@ -12,6 +12,7 @@ gcloud config set project meetsync-ai
 $env:PROJECT_ID="meetsync-ai"
 $env:REGION="asia-south1"
 $env:WA_NUMBER="+919187351205"
+$env:RECAPTCHA_ENABLED="false"  # set true after server-side secret is configured
 $env:API_URL=(gcloud run services describe hiring-agent-api --region $env:REGION --project $env:PROJECT_ID --format='value(status.url)').Trim()
 $env:JWT_SECRET=((gcloud secrets versions access latest --secret=hiring-agent-jwt-secret --project=$env:PROJECT_ID) -join '').Trim()
 $env:RECRUITER_JWT=(python scripts/generate_jwt.py --secret $env:JWT_SECRET --subject recruiter-1 --roles recruiter --hours 24).Trim()

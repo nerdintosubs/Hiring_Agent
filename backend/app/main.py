@@ -54,6 +54,11 @@ from backend.app.services.channel_events import (
     TransientWebhookError,
     process_channel_event,
 )
+from backend.app.services.recaptcha import (
+    RecaptchaServiceError,
+    RecaptchaVerificationError,
+    verify_recaptcha_token,
+)
 from backend.app.services.scoring import screening_score, shortlist_rank
 from backend.app.services.webhooks import (
     SignatureVerificationError,
@@ -300,6 +305,36 @@ def build_router() -> APIRouter:
     ) -> WebsiteLeadCreateResponse:
         store = get_store(request)
         settings = get_settings(request)
+        if settings.recaptcha_enabled:
+            if not settings.recaptcha_secret:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="recaptcha is enabled but secret is not configured",
+                )
+            if not payload.recaptcha_token:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="missing recaptcha token",
+                )
+            client_ip = request.client.host if request.client else None
+            try:
+                verify_recaptcha_token(
+                    token=payload.recaptcha_token,
+                    secret=settings.recaptcha_secret,
+                    min_score=settings.recaptcha_min_score,
+                    remote_ip=client_ip,
+                    expected_action="therapist_apply",
+                )
+            except RecaptchaVerificationError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=str(exc),
+                ) from exc
+            except RecaptchaServiceError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=str(exc),
+                ) from exc
         if payload.job_id:
             try:
                 store.get_job(payload.job_id)

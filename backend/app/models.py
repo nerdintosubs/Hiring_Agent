@@ -313,6 +313,7 @@ class WebsiteLeadCreateRequest(BaseModel):
     landing_path: Optional[str] = Field(default=None, max_length=250)
     referrer: Optional[str] = Field(default=None, max_length=250)
     session_id: Optional[str] = Field(default=None, max_length=120)
+    recaptcha_token: Optional[str] = Field(default=None, max_length=4000)
 
 
 class WebsiteLeadCreateResponse(BaseModel):

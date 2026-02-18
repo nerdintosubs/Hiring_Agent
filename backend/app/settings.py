@@ -21,6 +21,16 @@ def _bool_env(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class Settings:
     app_env: str
@@ -36,6 +46,9 @@ class Settings:
     jwt_algorithm: str
     default_first_contact_sla_minutes: int
     website_whatsapp_number: str
+    recaptcha_enabled: bool
+    recaptcha_secret: str
+    recaptcha_min_score: float
 
 
 def load_settings() -> Settings:
@@ -59,4 +72,7 @@ def load_settings() -> Settings:
             5, min(240, _int_env("DEFAULT_FIRST_CONTACT_SLA_MINUTES", 30))
         ),
         website_whatsapp_number=os.getenv("WEBSITE_WHATSAPP_NUMBER", "+919187351205").strip(),
+        recaptcha_enabled=_bool_env("RECAPTCHA_ENABLED", False),
+        recaptcha_secret=os.getenv("RECAPTCHA_SECRET", "").strip(),
+        recaptcha_min_score=max(0.0, min(1.0, _float_env("RECAPTCHA_MIN_SCORE", 0.5))),
     )

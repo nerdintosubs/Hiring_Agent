@@ -29,4 +29,14 @@ jobs:
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
           PYTEST_ADDOPTS: ""
-        run: python -m pytest -q tests/backend
+        run: |
+          set +e
+          python -m pytest -q tests/backend > pytest.out 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            tail -n 40 pytest.out
+            msg=$(tail -n 20 pytest.out | tr '\n' ' ')
+            echo "::error::pytest failed (exit $code): $msg"
+            exit $code
+          fi
+          cat pytest.out

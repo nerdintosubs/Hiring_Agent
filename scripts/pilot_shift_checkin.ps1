@@ -19,7 +19,11 @@ param(
     [int]$Screened = 0,
     [int]$Trials = 0,
     [int]$Offers = 0,
-    [int]$Joined = 0
+    [int]$Joined = 0,
+    [switch]$SendWhatsApp,
+    [string]$UpdateTo = "+919187351205",
+    [string]$WhatsAppPhoneNumberId = "",
+    [string]$WhatsAppAccessToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -71,6 +75,69 @@ function Post-Json {
     return Invoke-RestMethod -Method Post -Uri $Url -Headers $Headers -ContentType "application/json" -Body ($Payload | ConvertTo-Json -Compress)
 }
 
+function Normalize-Phone {
+    param([string]$Phone)
+    if (-not $Phone) { return "" }
+    return (($Phone -replace "[^0-9]", "").Trim())
+}
+
+function Build-CampaignUpdateMessage {
+    param(
+        [pscustomobject]$Progress,
+        [string]$Label
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm"
+    $counts = $Progress.counts
+    $rates = $Progress.conversion_rates
+    $prefix = if ($Label) { $Label } else { "Campaign Update" }
+    return @"
+$prefix | $($Progress.employer_name) | $timestamp
+Campaign: $($Progress.campaign_id)
+Leads/Screened/Trials/Offers/Joined: $($counts.leads)/$($counts.screened)/$($counts.trials)/$($counts.offers)/$($counts.joined)
+Conversion %: L-S $($rates.lead_to_screened), S-T $($rates.screened_to_trial), T-O $($rates.trial_to_offer), O-J $($rates.offer_to_joined)
+Health: $($Progress.health_status)
+"@.Trim()
+}
+
+function Send-WhatsAppUpdate {
+    param(
+        [string]$Message,
+        [string]$To,
+        [string]$PhoneNumberId,
+        [string]$AccessToken
+    )
+    $normalizedTo = Normalize-Phone -Phone $To
+    if (-not $normalizedTo) {
+        throw "UpdateTo phone number is empty/invalid."
+    }
+
+    $resolvedPhoneNumberId = $PhoneNumberId
+    if (-not $resolvedPhoneNumberId) { $resolvedPhoneNumberId = $env:WHATSAPP_PHONE_NUMBER_ID }
+    $resolvedAccessToken = $AccessToken
+    if (-not $resolvedAccessToken) { $resolvedAccessToken = $env:WHATSAPP_ACCESS_TOKEN }
+
+    if ($resolvedPhoneNumberId -and $resolvedAccessToken) {
+        $url = "https://graph.facebook.com/v20.0/$resolvedPhoneNumberId/messages"
+        $headers = @{ Authorization = "Bearer $resolvedAccessToken" }
+        $payload = @{
+            messaging_product = "whatsapp"
+            to = $normalizedTo
+            type = "text"
+            text = @{ body = $Message }
+        }
+        $response = Invoke-RestMethod -Method Post -Uri $url -Headers $headers -ContentType "application/json" -Body ($payload | ConvertTo-Json -Compress -Depth 5)
+        $messageId = if ($response.messages -and $response.messages[0].id) { $response.messages[0].id } else { "unknown" }
+        Write-Output ("whatsapp_sent=true")
+        Write-Output ("whatsapp_message_id=$messageId")
+        return
+    }
+
+    $encoded = [System.Uri]::EscapeDataString($Message)
+    Write-Output "whatsapp_sent=false"
+    Write-Output "whatsapp_reason=missing WHATSAPP_PHONE_NUMBER_ID/WHATSAPP_ACCESS_TOKEN; fallback to click-to-chat"
+    Write-Output ("whatsapp_link=https://wa.me/${normalizedTo}?text=$encoded")
+}
+
 $apiUrl = Resolve-ApiUrl -ProjectIdArg $ProjectId -RegionArg $Region -ServiceNameArg $ServiceName
 $token = Resolve-RecruiterToken -ProjectIdArg $ProjectId -JwtSecretNameArg $JwtSecretName -RecruiterSubjectArg $RecruiterSubject -RecruiterJwtArg $RecruiterJwt
 $headers = @{ Authorization = "Bearer $token" }
@@ -116,6 +183,12 @@ switch ($Mode) {
             Write-Output ("logged_$($event.event_type)=$($event.count)")
         }
         Write-Output ("progress=" + ($latest | ConvertTo-Json -Compress))
+        if ($SendWhatsApp) {
+            $label = "Shift Update"
+            if ($ShiftLabel) { $label = "$ShiftLabel Update" }
+            $message = Build-CampaignUpdateMessage -Progress $latest -Label $label
+            Send-WhatsAppUpdate -Message $message -To $UpdateTo -PhoneNumberId $WhatsAppPhoneNumberId -AccessToken $WhatsAppAccessToken
+        }
     }
     "status" {
         if (-not $CampaignId) {
@@ -123,5 +196,9 @@ switch ($Mode) {
         }
         $response = Invoke-RestMethod -Method Get -Uri "$apiUrl/campaigns/$CampaignId/progress" -Headers $headers
         Write-Output ("progress=" + ($response | ConvertTo-Json -Compress))
+        if ($SendWhatsApp) {
+            $message = Build-CampaignUpdateMessage -Progress $response -Label "Campaign Status"
+            Send-WhatsAppUpdate -Message $message -To $UpdateTo -PhoneNumberId $WhatsAppPhoneNumberId -AccessToken $WhatsAppAccessToken
+        }
     }
 }

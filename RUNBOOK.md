@@ -60,6 +60,14 @@ curl.exe -sS -H "Authorization: Bearer $env:RECRUITER_JWT" "$env:API_URL/leads/m
 
 # Read latest campaign status
 .\scripts\pilot_shift_checkin.ps1 -Mode status -CampaignId <campaign_id>
+
+# Send status update to WhatsApp (fallback link if no provider creds)
+.\scripts\pilot_shift_checkin.ps1 -Mode status -CampaignId <campaign_id> -SendWhatsApp -UpdateTo "+919187351205"
+
+# Direct send via Meta Cloud API
+$env:WHATSAPP_PHONE_NUMBER_ID="<meta-phone-number-id>"
+$env:WHATSAPP_ACCESS_TOKEN="<meta-access-token>"
+.\scripts\pilot_shift_checkin.ps1 -Mode status -CampaignId <campaign_id> -SendWhatsApp -UpdateTo "+919187351205"
 ```
 
 ## 7) Common failures

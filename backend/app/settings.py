@@ -34,6 +34,8 @@ class Settings:
     auth_enabled: bool
     jwt_secret: str
     jwt_algorithm: str
+    default_first_contact_sla_minutes: int
+    website_whatsapp_number: str
 
 
 def load_settings() -> Settings:
@@ -53,4 +55,8 @@ def load_settings() -> Settings:
         auth_enabled=_bool_env("AUTH_ENABLED", False),
         jwt_secret=os.getenv("JWT_SECRET", "dev-only-secret-change-in-prod").strip(),
         jwt_algorithm=os.getenv("JWT_ALGORITHM", "HS256").strip(),
+        default_first_contact_sla_minutes=max(
+            5, min(240, _int_env("DEFAULT_FIRST_CONTACT_SLA_MINUTES", 30))
+        ),
+        website_whatsapp_number=os.getenv("WEBSITE_WHATSAPP_NUMBER", "+919187351205").strip(),
     )

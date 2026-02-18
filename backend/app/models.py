@@ -198,18 +198,35 @@ class CampaignEventType(str, Enum):
     joined = "joined"
 
 
+class WebsiteEventType(str, Enum):
+    view = "view"
+    cta_click = "cta_click"
+    form_start = "form_start"
+    form_submit = "form_submit"
+    wa_click = "wa_click"
+
+
+class WebsiteLeadQueueMode(str, Enum):
+    all = "all"
+    due_soon = "due_soon"
+    overdue = "overdue"
+    hot_new = "hot_new"
+
+
 class FirstTenCampaignBootstrapRequest(BaseModel):
     employer_name: str = Field(min_length=2, max_length=120)
     neighborhood_focus: list[str] = Field(default_factory=list)
     whatsapp_business_number: str = Field(min_length=8, max_length=20)
     target_joiners: int = Field(default=10, ge=1, le=200)
     fresher_preferred: bool = True
+    first_contact_sla_minutes: Optional[int] = Field(default=None, ge=5, le=240)
 
 
 class CampaignBootstrapResponse(BaseModel):
     campaign_id: str
     city: str
     target_joiners: int
+    first_contact_sla_minutes_effective: int
     target_funnel: dict[str, int]
     templates: dict[str, str]
 
@@ -271,6 +288,98 @@ class ManualLeadItem(BaseModel):
     notes: Optional[str]
     created_by: Optional[str]
     created_at_utc: datetime
+
+
+class WebsiteLeadCreateRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    phone: str = Field(min_length=8, max_length=20)
+    languages: list[Language] = Field(default_factory=list)
+    therapy_experience: list[str] = Field(default_factory=list)
+    experience_years: float = Field(default=0, ge=0, le=50)
+    certifications: list[str] = Field(default_factory=list)
+    expected_pay: Optional[int] = Field(default=None, ge=1)
+    current_location: Optional[Coordinates] = None
+    preferred_shift_start: Optional[str] = None
+    preferred_shift_end: Optional[str] = None
+    neighborhood: Optional[str] = Field(default=None, max_length=120)
+    notes: Optional[str] = Field(default=None, max_length=250)
+    job_id: Optional[str] = None
+    campaign_id: Optional[str] = None
+    utm_source: Optional[str] = Field(default=None, max_length=120)
+    utm_medium: Optional[str] = Field(default=None, max_length=120)
+    utm_campaign: Optional[str] = Field(default=None, max_length=120)
+    utm_term: Optional[str] = Field(default=None, max_length=120)
+    utm_content: Optional[str] = Field(default=None, max_length=120)
+    landing_path: Optional[str] = Field(default=None, max_length=250)
+    referrer: Optional[str] = Field(default=None, max_length=250)
+    session_id: Optional[str] = Field(default=None, max_length=120)
+
+
+class WebsiteLeadCreateResponse(BaseModel):
+    lead_id: str
+    candidate_id: str
+    deduplicated: bool
+    application_id: Optional[str]
+    first_contact_due_utc: datetime
+    first_contact_sla_minutes_effective: int
+    wa_link: str
+
+
+class WebsiteLeadItem(BaseModel):
+    lead_id: str
+    candidate_id: str
+    deduplicated: bool
+    application_id: Optional[str]
+    name: str
+    phone: str
+    neighborhood: Optional[str]
+    campaign_id: Optional[str]
+    job_id: Optional[str]
+    utm_source: Optional[str]
+    wa_link: str
+    wa_click_count: int
+    first_contact_sla_minutes_effective: int
+    first_contact_due_utc: datetime
+    first_contact_at_utc: Optional[datetime]
+    sla_breached: bool
+    created_at_utc: datetime
+
+
+class WebsiteLeadContactUpdateResponse(BaseModel):
+    lead_id: str
+    first_contact_at_utc: datetime
+    sla_breached: bool
+
+
+class WebsiteEventRequest(BaseModel):
+    event_type: WebsiteEventType
+    lead_id: Optional[str] = None
+    campaign_id: Optional[str] = None
+    session_id: Optional[str] = Field(default=None, max_length=120)
+    utm_source: Optional[str] = Field(default=None, max_length=120)
+    utm_medium: Optional[str] = Field(default=None, max_length=120)
+    utm_campaign: Optional[str] = Field(default=None, max_length=120)
+    landing_path: Optional[str] = Field(default=None, max_length=250)
+    referrer: Optional[str] = Field(default=None, max_length=250)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class WebsiteEventResponse(BaseModel):
+    event_id: str
+    recorded: bool
+
+
+class WebsiteFunnelSummaryResponse(BaseModel):
+    date_from: date
+    date_to: date
+    total_leads: int
+    open_leads: int
+    contacted_leads: int
+    breached_leads: int
+    within_sla_rate: float
+    event_counts: dict[str, int]
+    leads_by_source: dict[str, int]
+    leads_by_neighborhood: dict[str, int]
 
 
 class EmployerRecord(BaseModel):
@@ -382,6 +491,7 @@ class FirstTenCampaignRecord(BaseModel):
     whatsapp_business_number: str
     target_joiners: int
     fresher_preferred: bool
+    first_contact_sla_minutes: Optional[int] = None
     counts: dict[str, int]
     created_at_utc: datetime
     updated_at_utc: datetime
@@ -409,4 +519,47 @@ class ManualLeadRecord(BaseModel):
     candidate_id: str
     deduplicated: bool
     application_id: Optional[str]
+    created_at_utc: datetime
+
+
+class WebsiteLeadRecord(BaseModel):
+    id: str
+    candidate_id: str
+    deduplicated: bool
+    application_id: Optional[str]
+    name: str
+    phone: str
+    neighborhood: Optional[str]
+    campaign_id: Optional[str]
+    job_id: Optional[str]
+    utm_source: Optional[str]
+    utm_medium: Optional[str]
+    utm_campaign: Optional[str]
+    utm_term: Optional[str]
+    utm_content: Optional[str]
+    landing_path: Optional[str]
+    referrer: Optional[str]
+    session_id: Optional[str]
+    wa_link_generated: str
+    wa_click_count: int
+    first_contact_sla_minutes_effective: int
+    first_contact_due_utc: datetime
+    first_contact_at_utc: Optional[datetime]
+    sla_breached: bool
+    created_at_utc: datetime
+    updated_at_utc: datetime
+
+
+class WebsiteEventRecord(BaseModel):
+    id: str
+    event_type: WebsiteEventType
+    lead_id: Optional[str]
+    campaign_id: Optional[str]
+    session_id: Optional[str]
+    utm_source: Optional[str]
+    utm_medium: Optional[str]
+    utm_campaign: Optional[str]
+    landing_path: Optional[str]
+    referrer: Optional[str]
+    metadata: dict[str, Any]
     created_at_utc: datetime

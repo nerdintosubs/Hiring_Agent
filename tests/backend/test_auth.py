@@ -69,3 +69,20 @@ def test_auth_allows_recruiter_token(monkeypatch) -> None:
         },
     )
     assert response.status_code == 200
+
+
+def test_website_lead_ingest_is_public_even_when_auth_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("PERSISTENCE_ENABLED", "false")
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("JWT_SECRET", "test-secret")
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/leads/website",
+        json={
+            "name": "Public Website Lead",
+            "phone": "9000088888",
+            "utm_source": "site_form",
+        },
+    )
+    assert response.status_code == 200

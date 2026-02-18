@@ -37,6 +37,15 @@ from backend.app.models import (
     StageTransitionRequest,
     WebhookEventRequest,
     WebhookEventResponse,
+    WebsiteEventRequest,
+    WebsiteEventResponse,
+    WebsiteFunnelSummaryResponse,
+    WebsiteLeadContactUpdateResponse,
+    WebsiteLeadCreateRequest,
+    WebsiteLeadCreateResponse,
+    WebsiteLeadItem,
+    WebsiteLeadQueueMode,
+    utc_now,
 )
 from backend.app.observability import MetricsRegistry, configure_logging, observe_request
 from backend.app.persistence import SqlitePersistence
@@ -283,6 +292,128 @@ def build_router() -> APIRouter:
             )
             for lead in leads
         ]
+
+    @router.post("/leads/website", response_model=WebsiteLeadCreateResponse)
+    def create_website_lead(
+        payload: WebsiteLeadCreateRequest,
+        request: Request,
+    ) -> WebsiteLeadCreateResponse:
+        store = get_store(request)
+        settings = get_settings(request)
+        if payload.job_id:
+            try:
+                store.get_job(payload.job_id)
+            except StoreNotFoundError as exc:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        try:
+            lead, candidate, deduplicated = store.create_website_lead(
+                payload,
+                default_first_contact_sla_minutes=settings.default_first_contact_sla_minutes,
+                default_whatsapp_number=settings.website_whatsapp_number,
+            )
+        except StoreNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return WebsiteLeadCreateResponse(
+            lead_id=lead.id,
+            candidate_id=candidate.id,
+            deduplicated=deduplicated,
+            application_id=lead.application_id,
+            first_contact_due_utc=lead.first_contact_due_utc,
+            first_contact_sla_minutes_effective=lead.first_contact_sla_minutes_effective,
+            wa_link=lead.wa_link_generated,
+        )
+
+    @router.get("/leads/website", response_model=list[WebsiteLeadItem])
+    def list_website_leads(
+        request: Request,
+        limit: int = 50,
+        campaign_id: Optional[str] = None,
+        queue_mode: WebsiteLeadQueueMode = WebsiteLeadQueueMode.all,
+        _: AuthContext = Depends(require_roles("recruiter", "admin")),
+    ) -> list[WebsiteLeadItem]:
+        store = get_store(request)
+        leads = store.list_website_leads(
+            limit=limit,
+            campaign_id=campaign_id,
+            queue_mode=queue_mode,
+        )
+        return [
+            WebsiteLeadItem(
+                lead_id=lead.id,
+                candidate_id=lead.candidate_id,
+                deduplicated=lead.deduplicated,
+                application_id=lead.application_id,
+                name=lead.name,
+                phone=lead.phone,
+                neighborhood=lead.neighborhood,
+                campaign_id=lead.campaign_id,
+                job_id=lead.job_id,
+                utm_source=lead.utm_source,
+                wa_link=lead.wa_link_generated,
+                wa_click_count=lead.wa_click_count,
+                first_contact_sla_minutes_effective=lead.first_contact_sla_minutes_effective,
+                first_contact_due_utc=lead.first_contact_due_utc,
+                first_contact_at_utc=lead.first_contact_at_utc,
+                sla_breached=lead.sla_breached,
+                created_at_utc=lead.created_at_utc,
+            )
+            for lead in leads
+        ]
+
+    @router.post(
+        "/leads/website/{lead_id}/contact",
+        response_model=WebsiteLeadContactUpdateResponse,
+    )
+    def mark_website_lead_contacted(
+        lead_id: str,
+        request: Request,
+        _: AuthContext = Depends(require_roles("recruiter", "admin")),
+    ) -> WebsiteLeadContactUpdateResponse:
+        store = get_store(request)
+        try:
+            updated = store.mark_website_lead_contacted(lead_id=lead_id)
+        except StoreNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return WebsiteLeadContactUpdateResponse(
+            lead_id=updated.id,
+            first_contact_at_utc=updated.first_contact_at_utc or updated.updated_at_utc,
+            sla_breached=updated.sla_breached,
+        )
+
+    @router.post("/events/website", response_model=WebsiteEventResponse)
+    def record_website_event(
+        payload: WebsiteEventRequest,
+        request: Request,
+    ) -> WebsiteEventResponse:
+        store = get_store(request)
+        try:
+            event = store.record_website_event(payload)
+        except StoreNotFoundError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        return WebsiteEventResponse(event_id=event.id, recorded=True)
+
+    @router.get("/funnel/website/summary", response_model=WebsiteFunnelSummaryResponse)
+    def website_funnel_summary(
+        request: Request,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        campaign_id: Optional[str] = None,
+        _: AuthContext = Depends(require_roles("recruiter", "admin")),
+    ) -> WebsiteFunnelSummaryResponse:
+        store = get_store(request)
+        end = date_to or utc_now().date()
+        start = date_from or (end - timedelta(days=6))
+        if start > end:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="date_from cannot be greater than date_to",
+            )
+        summary = store.website_funnel_summary(
+            date_from=start,
+            date_to=end,
+            campaign_id=campaign_id,
+        )
+        return WebsiteFunnelSummaryResponse.model_validate(summary)
 
     @router.post("/screening/run", response_model=ScreeningRunResponse)
     def run_screening(
@@ -656,6 +787,7 @@ def build_router() -> APIRouter:
         _: AuthContext = Depends(require_roles("recruiter", "admin")),
     ) -> CampaignBootstrapResponse:
         store = get_store(request)
+        settings = get_settings(request)
         campaign = store.create_first_ten_campaign(
             employer_name=payload.employer_name,
             city="Bangalore",
@@ -663,11 +795,16 @@ def build_router() -> APIRouter:
             whatsapp_business_number=payload.whatsapp_business_number,
             target_joiners=payload.target_joiners,
             fresher_preferred=payload.fresher_preferred,
+            first_contact_sla_minutes=payload.first_contact_sla_minutes,
+        )
+        effective_sla = (
+            campaign.first_contact_sla_minutes or settings.default_first_contact_sla_minutes
         )
         return CampaignBootstrapResponse(
             campaign_id=campaign.id,
             city=campaign.city,
             target_joiners=campaign.target_joiners,
+            first_contact_sla_minutes_effective=effective_sla,
             target_funnel=default_target_funnel(campaign.target_joiners),
             templates=campaign_templates(campaign.whatsapp_business_number),
         )

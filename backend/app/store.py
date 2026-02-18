@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from threading import RLock
 from typing import TYPE_CHECKING, Optional
+from urllib.parse import quote_plus
 from uuid import uuid4
 
 from backend.app.models import (
@@ -24,6 +25,12 @@ from backend.app.models import (
     StageStatus,
     WebhookDeliveryRecord,
     WebhookProcessingStatus,
+    WebsiteEventRecord,
+    WebsiteEventRequest,
+    WebsiteEventType,
+    WebsiteLeadCreateRequest,
+    WebsiteLeadQueueMode,
+    WebsiteLeadRecord,
     utc_now,
 )
 from backend.app.services.dedupe import is_probable_duplicate
@@ -60,6 +67,8 @@ class InMemoryStore:
         self.webhook_deliveries: dict[str, WebhookDeliveryRecord] = {}
         self.first_ten_campaigns: dict[str, FirstTenCampaignRecord] = {}
         self.manual_leads: dict[str, ManualLeadRecord] = {}
+        self.website_leads: dict[str, WebsiteLeadRecord] = {}
+        self.website_events: dict[str, WebsiteEventRecord] = {}
 
         if self.persistence:
             snapshot = self.persistence.load_snapshot()
@@ -395,6 +404,7 @@ class InMemoryStore:
         whatsapp_business_number: str,
         target_joiners: int,
         fresher_preferred: bool,
+        first_contact_sla_minutes: Optional[int],
     ) -> FirstTenCampaignRecord:
         with self._lock:
             now = utc_now()
@@ -406,6 +416,7 @@ class InMemoryStore:
                 whatsapp_business_number=whatsapp_business_number.strip(),
                 target_joiners=target_joiners,
                 fresher_preferred=fresher_preferred,
+                first_contact_sla_minutes=first_contact_sla_minutes,
                 counts={
                     CampaignEventType.leads.value: 0,
                     CampaignEventType.screened.value: 0,
@@ -525,6 +536,244 @@ class InMemoryStore:
         safe_limit = max(1, min(limit, 500))
         return records[:safe_limit]
 
+    def create_website_lead(
+        self,
+        request: WebsiteLeadCreateRequest,
+        *,
+        default_first_contact_sla_minutes: int,
+        default_whatsapp_number: str,
+    ) -> tuple[WebsiteLeadRecord, CandidateRecord, bool]:
+        campaign = None
+        if request.campaign_id:
+            campaign = self.get_first_ten_campaign(request.campaign_id)
+
+        effective_sla = (
+            campaign.first_contact_sla_minutes
+            if campaign and campaign.first_contact_sla_minutes
+            else default_first_contact_sla_minutes
+        )
+        whatsapp_number = (
+            campaign.whatsapp_business_number if campaign else default_whatsapp_number
+        )
+
+        candidate_request = CandidateIngestRequest(
+            name=request.name,
+            phone=request.phone,
+            source_channel=SourceChannel.web,
+            languages=request.languages,
+            therapy_experience=request.therapy_experience,
+            experience_years=request.experience_years,
+            certifications=request.certifications,
+            expected_pay=request.expected_pay,
+            current_location=request.current_location,
+            preferred_shift_start=request.preferred_shift_start,
+            preferred_shift_end=request.preferred_shift_end,
+            job_id=request.job_id,
+        )
+        candidate, deduplicated = self.ingest_candidate(candidate_request)
+        application_id = None
+        if request.job_id:
+            application = self.create_or_get_application(request.job_id, candidate.id)
+            application_id = application.id
+
+        now = utc_now()
+        first_contact_due_utc = now + timedelta(minutes=effective_sla)
+        message = (
+            f"Hi, I want to apply as a therapist. Name: {request.name.strip()}, "
+            f"Phone: {request.phone.strip()}."
+        )
+        wa_link = self._build_wa_link(phone=whatsapp_number, text=message)
+
+        lead = WebsiteLeadRecord(
+            id=new_id("wlead"),
+            candidate_id=candidate.id,
+            deduplicated=deduplicated,
+            application_id=application_id,
+            name=request.name.strip(),
+            phone=request.phone.strip(),
+            neighborhood=request.neighborhood,
+            campaign_id=request.campaign_id,
+            job_id=request.job_id,
+            utm_source=request.utm_source,
+            utm_medium=request.utm_medium,
+            utm_campaign=request.utm_campaign,
+            utm_term=request.utm_term,
+            utm_content=request.utm_content,
+            landing_path=request.landing_path,
+            referrer=request.referrer,
+            session_id=request.session_id,
+            wa_link_generated=wa_link,
+            wa_click_count=0,
+            first_contact_sla_minutes_effective=effective_sla,
+            first_contact_due_utc=first_contact_due_utc,
+            first_contact_at_utc=None,
+            sla_breached=False,
+            created_at_utc=now,
+            updated_at_utc=now,
+        )
+        with self._lock:
+            self.website_leads[lead.id] = lead
+        self._persist_state()
+        return lead, candidate, deduplicated
+
+    def list_website_leads(
+        self,
+        *,
+        limit: int = 50,
+        campaign_id: Optional[str] = None,
+        queue_mode: WebsiteLeadQueueMode = WebsiteLeadQueueMode.all,
+    ) -> list[WebsiteLeadRecord]:
+        with self._lock:
+            records = list(self.website_leads.values())
+        if campaign_id:
+            records = [item for item in records if item.campaign_id == campaign_id]
+
+        now = utc_now()
+        due_window = now + timedelta(minutes=15)
+        fresh_cutoff = now - timedelta(minutes=10)
+
+        if queue_mode == WebsiteLeadQueueMode.overdue:
+            records = [
+                item
+                for item in records
+                if item.first_contact_at_utc is None and item.first_contact_due_utc < now
+            ]
+        elif queue_mode == WebsiteLeadQueueMode.due_soon:
+            records = [
+                item
+                for item in records
+                if (
+                    item.first_contact_at_utc is None
+                    and now <= item.first_contact_due_utc <= due_window
+                )
+            ]
+        elif queue_mode == WebsiteLeadQueueMode.hot_new:
+            records = [
+                item
+                for item in records
+                if item.first_contact_at_utc is None and item.created_at_utc >= fresh_cutoff
+            ]
+
+        records.sort(key=lambda item: item.created_at_utc, reverse=True)
+        safe_limit = max(1, min(limit, 500))
+        return records[:safe_limit]
+
+    def mark_website_lead_contacted(
+        self,
+        *,
+        lead_id: str,
+        contacted_at_utc: Optional[datetime] = None,
+    ) -> WebsiteLeadRecord:
+        with self._lock:
+            lead = self.website_leads.get(lead_id)
+            if not lead:
+                raise StoreNotFoundError(f"website lead not found: {lead_id}")
+            first_contact_at_utc = contacted_at_utc or utc_now()
+            updated = lead.model_copy(
+                update={
+                    "first_contact_at_utc": first_contact_at_utc,
+                    "sla_breached": first_contact_at_utc > lead.first_contact_due_utc,
+                    "updated_at_utc": utc_now(),
+                }
+            )
+            self.website_leads[lead_id] = updated
+            self._persist_state()
+            return updated
+
+    def record_website_event(self, request: WebsiteEventRequest) -> WebsiteEventRecord:
+        with self._lock:
+            if request.lead_id and request.lead_id not in self.website_leads:
+                raise StoreNotFoundError(f"website lead not found: {request.lead_id}")
+            if request.campaign_id and request.campaign_id not in self.first_ten_campaigns:
+                raise StoreNotFoundError(f"campaign not found: {request.campaign_id}")
+
+            event = WebsiteEventRecord(
+                id=new_id("wev"),
+                event_type=request.event_type,
+                lead_id=request.lead_id,
+                campaign_id=request.campaign_id,
+                session_id=request.session_id,
+                utm_source=request.utm_source,
+                utm_medium=request.utm_medium,
+                utm_campaign=request.utm_campaign,
+                landing_path=request.landing_path,
+                referrer=request.referrer,
+                metadata=request.metadata,
+                created_at_utc=utc_now(),
+            )
+            self.website_events[event.id] = event
+
+            if request.event_type == WebsiteEventType.wa_click and request.lead_id:
+                lead = self.website_leads[request.lead_id]
+                self.website_leads[request.lead_id] = lead.model_copy(
+                    update={
+                        "wa_click_count": lead.wa_click_count + 1,
+                        "updated_at_utc": utc_now(),
+                    }
+                )
+            self._persist_state()
+            return event
+
+    def website_funnel_summary(
+        self,
+        *,
+        date_from: date,
+        date_to: date,
+        campaign_id: Optional[str] = None,
+    ) -> dict:
+        with self._lock:
+            leads = list(self.website_leads.values())
+            events = list(self.website_events.values())
+
+        def in_range(dt_value: datetime) -> bool:
+            dt_date = dt_value.date()
+            return date_from <= dt_date <= date_to
+
+        leads = [lead for lead in leads if in_range(lead.created_at_utc)]
+        if campaign_id:
+            leads = [lead for lead in leads if lead.campaign_id == campaign_id]
+
+        lead_ids = {lead.id for lead in leads}
+        events = [event for event in events if in_range(event.created_at_utc)]
+        if campaign_id:
+            events = [
+                event
+                for event in events
+                if event.campaign_id == campaign_id or (event.lead_id and event.lead_id in lead_ids)
+            ]
+
+        event_counts = {event_type.value: 0 for event_type in WebsiteEventType}
+        for event in events:
+            event_counts[event.event_type.value] = event_counts.get(event.event_type.value, 0) + 1
+
+        leads_by_source: dict[str, int] = {}
+        leads_by_neighborhood: dict[str, int] = {}
+        for lead in leads:
+            source = (lead.utm_source or "unknown").strip().lower() or "unknown"
+            neighborhood = (lead.neighborhood or "unknown").strip().lower() or "unknown"
+            leads_by_source[source] = leads_by_source.get(source, 0) + 1
+            leads_by_neighborhood[neighborhood] = leads_by_neighborhood.get(neighborhood, 0) + 1
+
+        total_leads = len(leads)
+        contacted_leads = len([lead for lead in leads if lead.first_contact_at_utc is not None])
+        breached_leads = len([lead for lead in leads if lead.sla_breached])
+        open_leads = total_leads - contacted_leads
+        within_sla = max(contacted_leads - breached_leads, 0)
+        within_sla_rate = round((within_sla / contacted_leads) * 100, 2) if contacted_leads else 0.0
+
+        return {
+            "date_from": date_from,
+            "date_to": date_to,
+            "total_leads": total_leads,
+            "open_leads": open_leads,
+            "contacted_leads": contacted_leads,
+            "breached_leads": breached_leads,
+            "within_sla_rate": within_sla_rate,
+            "event_counts": event_counts,
+            "leads_by_source": leads_by_source,
+            "leads_by_neighborhood": leads_by_neighborhood,
+        }
+
     def get_first_ten_campaign(self, campaign_id: str) -> FirstTenCampaignRecord:
         campaign = self.first_ten_campaigns.get(campaign_id)
         if not campaign:
@@ -603,6 +852,12 @@ class InMemoryStore:
             "manual_leads": [
                 record.model_dump(mode="json") for record in self.manual_leads.values()
             ],
+            "website_leads": [
+                record.model_dump(mode="json") for record in self.website_leads.values()
+            ],
+            "website_events": [
+                record.model_dump(mode="json") for record in self.website_events.values()
+            ],
         }
 
     def _hydrate_from_snapshot(self, snapshot: dict) -> None:
@@ -649,7 +904,22 @@ class InMemoryStore:
             record["id"]: ManualLeadRecord.model_validate(record)
             for record in snapshot.get("manual_leads", [])
         }
+        self.website_leads = {
+            record["id"]: WebsiteLeadRecord.model_validate(record)
+            for record in snapshot.get("website_leads", [])
+        }
+        self.website_events = {
+            record["id"]: WebsiteEventRecord.model_validate(record)
+            for record in snapshot.get("website_events", [])
+        }
 
     @staticmethod
     def _webhook_key(*, channel: str, event_id: str) -> str:
         return f"{channel}:{event_id}"
+
+    @staticmethod
+    def _build_wa_link(*, phone: str, text: str) -> str:
+        normalized = "".join(char for char in phone if char.isdigit())
+        if not normalized:
+            normalized = "919187351205"
+        return f"https://wa.me/{normalized}?text={quote_plus(text)}"

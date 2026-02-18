@@ -41,6 +41,13 @@ make smoke-local
 - `GET /leads/manual?limit=50` list recent manual leads.
 - `GET /leads/manual` supports filters: `source_channel`, `neighborhood`, `created_by`, `search`, `created_from`, `created_to`.
 
+## Website therapist funnel APIs
+- `POST /leads/website` public website intake endpoint (returns SLA due time + `wa.me` link).
+- `GET /leads/website` recruiter queue with `queue_mode=all|due_soon|overdue|hot_new`.
+- `POST /leads/website/{lead_id}/contact` mark first recruiter contact and compute SLA breach.
+- `POST /events/website` capture website funnel events (`view`, `cta_click`, `form_start`, `form_submit`, `wa_click`).
+- `GET /funnel/website/summary` recruiter analytics for leads, SLA, source, and neighborhood mix.
+
 ## Dashboard
 - `frontend/index.html` now includes:
 - campaign KPI panel
@@ -59,6 +66,10 @@ python scripts/generate_jwt.py --secret dev-secret --subject recruiter-1 --roles
 - Webhook retries/events and manual lead inbox entries survive restarts.
 - For production, set `DATABASE_URL` to PostgreSQL (for example `postgresql+psycopg://...`).
 - Full in-memory workflow state is snapshotted to SQL so jobs/candidates/offers survive restarts.
+
+## SLA configuration
+- Global default first-contact SLA for website leads: `DEFAULT_FIRST_CONTACT_SLA_MINUTES` (default `30`, allowed `5..240`).
+- Per-campaign override via `POST /campaigns/first-10/bootstrap` field: `first_contact_sla_minutes`.
 
 ## Auth and Roles
 - Set `AUTH_ENABLED=true` to enforce JWT auth.

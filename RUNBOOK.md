@@ -54,6 +54,9 @@ curl.exe -sS -H "Authorization: Bearer $env:RECRUITER_JWT" "$env:API_URL/leads/m
 # Bootstrap a new first-10 campaign
 .\scripts\pilot_shift_checkin.ps1 -Mode bootstrap
 
+# Bootstrap with explicit first-contact SLA override (minutes)
+.\scripts\pilot_shift_checkin.ps1 -Mode bootstrap -FirstContactSlaMinutes 20
+
 # Log shift metrics
 .\scripts\pilot_shift_checkin.ps1 -Mode checkin -CampaignId <campaign_id> -ShiftLabel "Shift-1" -Leads 15 -Screened 7
 .\scripts\pilot_shift_checkin.ps1 -Mode checkin -CampaignId <campaign_id> -ShiftLabel "Shift-2" -Trials 3 -Offers 2 -Joined 1
@@ -70,7 +73,25 @@ $env:WHATSAPP_ACCESS_TOKEN="<meta-access-token>"
 .\scripts\pilot_shift_checkin.ps1 -Mode status -CampaignId <campaign_id> -SendWhatsApp -UpdateTo "+919187351205"
 ```
 
-## 7) Common failures
+## 7) Website therapist funnel (providerless mode)
+```powershell
+# Create website lead (public endpoint in production website flow)
+$body='{"name":"Website Therapist","phone":"9000077777","languages":["kn","en"],"utm_source":"meta_ads","landing_path":"/careers/therapist","neighborhood":"HSR"}'
+curl.exe -sS -X POST "$env:API_URL/leads/website" -H "Content-Type: application/json" -d $body
+
+# Log website event
+$body='{"event_type":"wa_click","lead_id":"<wlead_id>","utm_source":"meta_ads"}'
+curl.exe -sS -X POST "$env:API_URL/events/website" -H "Content-Type: application/json" -d $body
+
+# Recruiter queue views
+curl.exe -sS -H "Authorization: Bearer $env:RECRUITER_JWT" "$env:API_URL/leads/website?queue_mode=due_soon&limit=20"
+curl.exe -sS -H "Authorization: Bearer $env:RECRUITER_JWT" "$env:API_URL/leads/website?queue_mode=overdue&limit=20"
+
+# Mark first contact completed
+curl.exe -sS -X POST -H "Authorization: Bearer $env:RECRUITER_JWT" "$env:API_URL/leads/website/<wlead_id>/contact"
+```
+
+## 8) Common failures
 - `401 Unauthorized`: regenerate JWT from latest `hiring-agent-jwt-secret`.
 - `500` on startup: confirm Cloud Run has Cloud SQL attachment and latest `hiring-agent-database-url`.
 - No new leads: verify recruiter used valid `source_channel` and unique phone.

@@ -14,6 +14,7 @@ param(
     [string]$WhatsAppBusinessNumber = "+919187351205",
     [int]$TargetJoiners = 10,
     [bool]$FresherPreferred = $true,
+    [int]$FirstContactSlaMinutes = 0,
     [string]$ShiftLabel = "",
     [int]$Leads = 0,
     [int]$Screened = 0,
@@ -150,6 +151,9 @@ switch ($Mode) {
             whatsapp_business_number = $WhatsAppBusinessNumber
             target_joiners = $TargetJoiners
             fresher_preferred = $FresherPreferred
+        }
+        if ($FirstContactSlaMinutes -gt 0) {
+            $payload.first_contact_sla_minutes = $FirstContactSlaMinutes
         }
         $response = Post-Json -Url "$apiUrl/campaigns/first-10/bootstrap" -Headers $headers -Payload $payload
         Write-Output ("campaign_id=" + $response.campaign_id)
